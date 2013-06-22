@@ -9,21 +9,17 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
-#include <poll.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/mman.h>
 #include <sys/ioctl.h>
-#include <sys/socket.h>
-#include <sys/select.h>
 
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
 #include <linux/videodev2.h>
-
 #include <uv.h>
 
 #define DEV "/dev/video0"
