@@ -136,14 +136,13 @@ static void sendBuf(uv_udp_send_t *req, uv_udp_t *handler, struct sockaddr_in ad
 	}
 }
 
-//static void on_frame(uv_poll_t *handler, int status, int events) {
-static void on_frame(uv_timer_t* handler, int status) {
+static void on_frame(uv_poll_t *handler, int status, int events) {
 	struct handler_t *data = (struct handler_t *) handler->data;
 	struct v4l2_buffer buf;
 
 	ssize_t offset = 0, size = 0;
 
-//	if (events == UV_READABLE) {
+	if (events == UV_READABLE) {
 		memset(&buf, 0, sizeof(struct v4l2_buffer));
 
 		buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -170,7 +169,7 @@ static void on_frame(uv_timer_t* handler, int status) {
                 if (xioctl(data->fd, VIDIOC_QBUF, &buf) < 0) {
                         errno_exit("VIDIOC_QBUF");
 		}
-//	}
+	}
 }
 
 int main(int argc, char **argv) {
@@ -320,9 +319,7 @@ int main(int argc, char **argv) {
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
-//	uv_poll_t *handler = malloc(sizeof(uv_poll_t));
-	uv_timer_t *handler = malloc(sizeof(uv_timer_t));
-
+	uv_poll_t *handler = malloc(sizeof(uv_poll_t));
 	struct handler_t *data = malloc(sizeof(struct handler_t));
 
 	static uv_udp_t sd;
@@ -342,11 +339,8 @@ int main(int argc, char **argv) {
 	data->buffers = buffers;
 	handler->data = data;
 
-//	uv_poll_init(uv_default_loop(), handler, fd);
-//	uv_poll_start(handler, UV_READABLE, on_frame);
-
-	uv_timer_init(uv_default_loop(), handler);
-	uv_timer_start(handler, on_frame, 500, 500);
+	uv_poll_init(uv_default_loop(), handler, fd);
+	uv_poll_start(handler, UV_READABLE, on_frame);
 
 	uv_signal_t sighandler;
 	uv_signal_init(uv_default_loop(), &sighandler);
@@ -370,6 +364,7 @@ int main(int argc, char **argv) {
 			errno_exit("munmap");
 		}
 	}
+
 	free(buffers);
 	free(data);
 	free(handler);
