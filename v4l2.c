@@ -85,30 +85,65 @@ void handleFrame(void *ptr, size_t size) {
 		counter = 0;
 	}
 
-//	fprintf(stderr, "\r          Got frame! (size=%zu, fps=%.2f)                    \r", size, fps);
+	fprintf(stderr, "\r          Got frame! (size=%zu, fps=%.2f)                    \r", size, fps);
 }
 
-void doexit(uv_signal_t* handler, int signum) {
+static void on_close(uv_handle_t* handle) {
+
+}
+
+static void on_send(uv_udp_send_t* req, int status) {
+	if (status != 0) {
+		fprintf(stderr, "Unable to send socket!\n");
+		uv_close((uv_handle_t*) req->handle, on_close);
+	}
+}
+
+static void doexit(uv_signal_t* handler, int signum) {
 	if (signum == SIGINT) {
+		fprintf(stderr, "\n\nGot Signal!\n\n");
+		uv_signal_stop(handler);
 		uv_stop(uv_default_loop());
 	}
 }
 
 struct handler_t {
 	int fd;
-	int sd;
+	uv_udp_t *sd;
 	int count;
-	struct sockaddr_in *addr;
+	uv_udp_send_t req;
+	void *mem;
+	unsigned int msize;
+	struct sockaddr_in addr;
 	struct buffer *buffers;
 };
 
-void getFrame(uv_poll_t *handler, int status, int events) {
+static void sendBuf(uv_udp_send_t *req, uv_udp_t *handler, struct sockaddr_in addr, void *mem, unsigned int msize, void *ptr, unsigned int psize) {
+	unsigned int offset = 0, segment = 0;
+	uv_buf_t buffer;
+
+	while (offset < psize) {
+		segment = ((psize - offset) % msize);
+		memcpy(mem, (ptr + offset), segment);
+		buffer = uv_buf_init((char *) mem, segment);
+
+		if (uv_udp_send(req, handler, &buffer, 1, addr, on_send) < 0) {
+                        uv_stop(uv_default_loop());
+                        break;
+                }
+
+		offset += segment;
+	}
+}
+
+//static void on_frame(uv_poll_t *handler, int status, int events) {
+static void on_frame(uv_timer_t* handler, int status) {
 	struct handler_t *data = (struct handler_t *) handler->data;
 	struct v4l2_buffer buf;
 
 	ssize_t offset = 0, size = 0;
 
-	if (events == UV_READABLE) {
+//	if (events == UV_READABLE) {
 		memset(&buf, 0, sizeof(struct v4l2_buffer));
 
 		buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -125,32 +160,21 @@ void getFrame(uv_poll_t *handler, int status, int events) {
 		}
 
 		assert(buf.index < data->count);
-
 		handleFrame(data->buffers[buf.index].start, buf.bytesused);
 
-		while (offset < buf.bytesused) {
-			if ((size = sendto(data->sd, (data->buffers[buf.index].start + offset), ((buf.bytesused - offset) & 1000), 0,(struct sockaddr *) data->addr, sizeof(struct sockaddr_in))) <= 0) {
-				break;
-			}
+		header.size = buf.bytesused;
 
-			fprintf(stderr, "\r          Segment size: %zd                    \r", size);
-
-			offset += size;
-		}
-
-//		if (sendto(data->sd, data->buffers[buf.index].start, buf.bytesused, 0,(struct sockaddr *) &data->addr, sizeof(struct sockaddr_in)) < 0) {
-//			errno_exit("sendto()");
-//		}
+		sendBuf(&data->req, data->sd, data->addr, data->mem, data->msize, &header, sizeof(magic_header_t));
+		sendBuf(&data->req, data->sd, data->addr, data->mem, data->msize, data->buffers[buf.index].start, buf.bytesused);
 
                 if (xioctl(data->fd, VIDIOC_QBUF, &buf) < 0) {
                         errno_exit("VIDIOC_QBUF");
 		}
-
-	}
+//	}
 }
 
 int main(int argc, char **argv) {
-	int fd = -1, sd = -1, ret = -1;
+	int fd = -1, ret = -1;
 	int count;
 	struct v4l2_requestbuffers req;
 	struct v4l2_capability cap;
@@ -162,8 +186,6 @@ int main(int argc, char **argv) {
 	enum v4l2_buf_type type;
 	struct buffer *buffers;
 
-	struct sockaddr_in addr;
-
 	unsigned int i;
 	unsigned int min;
 
@@ -171,15 +193,6 @@ int main(int argc, char **argv) {
 		fprintf(stderr, "Cannot open %s\n", DEV);
 		exit(EXIT_FAILURE);
 	}
-
-	if ((sd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-		errno_exit("SOCKET");
-	}
-
-    	memset(&addr,0,sizeof(addr));
-    	addr.sin_family = AF_INET;
-    	addr.sin_addr.s_addr = inet_addr("225.0.0.37");
-    	addr.sin_port=htons(8000);
 
 	memset(&cap, 0, sizeof(struct v4l2_capability));
 
@@ -215,7 +228,7 @@ int main(int argc, char **argv) {
 
 	fps.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 	fps.parm.capture.timeperframe.numerator = 1;
-	fps.parm.capture.timeperframe.denominator = 30;
+	fps.parm.capture.timeperframe.denominator = 24;
 
 	if (xioctl(fd, VIDIOC_S_PARM, &fps) < 0) {
 		errno_exit("VIDIOC_S_PARM");
@@ -225,13 +238,18 @@ int main(int argc, char **argv) {
 		errno_exit("VIDIOC_G_PARM");
 	}
 
+	if (xioctl(fd, VIDIOC_G_FMT, &fmt) < 0) {
+		errno_exit("VIDIOC_G_FMT");
+	}
+
 	if (fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_H264) {
 		fprintf(stderr, "Width: %d Height: %d PixelFormat: H264 FPS: %u\n", fmt.fmt.pix.width, fmt.fmt.pix.height, fps.parm.capture.timeperframe.denominator);
 	}
 
-//	if (xioctl(fd, VIDIOC_G_FMT, &fmt) < 0) {
-//		errno_exit("VIDIOC_G_FMT");
-//	}
+	else {
+		fprintf(stderr, "Unknow format!");
+		exit(0);
+	}
 
 	min = fmt.fmt.pix.width * 2;
 
@@ -247,7 +265,7 @@ int main(int argc, char **argv) {
 
 	memset(&req, 0, sizeof(struct v4l2_requestbuffers));
 
-	req.count = 30;
+	req.count = 10;
 	req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 	req.memory = V4L2_MEMORY_MMAP;
 
@@ -302,18 +320,33 @@ int main(int argc, char **argv) {
 
 	clock_gettime(CLOCK_MONOTONIC, &start);
 
-	uv_poll_t *handler = malloc(sizeof(uv_poll_t));
+//	uv_poll_t *handler = malloc(sizeof(uv_poll_t));
+	uv_timer_t *handler = malloc(sizeof(uv_timer_t));
+
 	struct handler_t *data = malloc(sizeof(struct handler_t));
 
+	static uv_udp_t sd;
+	struct sockaddr_in addr = uv_ip4_addr("225.0.0.37", 8000);
+
+	uv_udp_init(uv_default_loop(), &sd);
+	uv_udp_bind(&sd, uv_ip4_addr("0.0.0.0", 0), 0);
+	uv_udp_set_multicast_ttl(&sd, 1);
+
+	data->mem = malloc(1024);
+	data->msize = 1024;
+
 	data->fd = fd;
-	data->sd = sd;
+	data->sd = &sd;
 	data->count = count;
-	data->addr = &addr;
+	data->addr = addr;
 	data->buffers = buffers;
 	handler->data = data;
 
-	uv_poll_init(uv_default_loop(), handler, fd);
-	uv_poll_start(handler, UV_READABLE, getFrame);
+//	uv_poll_init(uv_default_loop(), handler, fd);
+//	uv_poll_start(handler, UV_READABLE, on_frame);
+
+	uv_timer_init(uv_default_loop(), handler);
+	uv_timer_start(handler, on_frame, 500, 500);
 
 	uv_signal_t sighandler;
 	uv_signal_init(uv_default_loop(), &sighandler);
@@ -321,12 +354,15 @@ int main(int argc, char **argv) {
 
 	uv_run(uv_default_loop(), UV_RUN_DEFAULT);
 
+	uv_close((uv_handle_t*) data->req.handle, on_close);
+
 	type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 
 	if (xioctl(fd, VIDIOC_STREAMOFF, &type) < 0) {
 		errno_exit("VIDIOC_STREAMOFF");
 	}
 
+	free(data->mem);
 	free(buffers[count].start);
 
 	for (i = 0; i < count; ++i) {
@@ -334,13 +370,10 @@ int main(int argc, char **argv) {
 			errno_exit("munmap");
 		}
 	}
-
 	free(buffers);
 	free(data);
 	free(handler);
 	close(fd);
-	close(sd);
 
-	fprintf(stderr, "\n\n");
 	return 0;
 }
