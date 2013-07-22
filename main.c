@@ -31,7 +31,7 @@ static void con_close_cb(uv_handle_t* handle) {
 
 static void doexit(uv_signal_t* handler, int signum) {
 	if (signum == SIGINT) {
-		doexit = 1
+		_doexit = 1;
 		LOG("\n\nGot Signal!\n\n");
 
 		uv_signal_stop(handler);
