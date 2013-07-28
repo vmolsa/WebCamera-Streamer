@@ -27,6 +27,7 @@ void v4l2_on_frame(uv_poll_t *handler, int status, int events) {
 				case EIO:
 				default:
 					LOG("Unable to Query buffer!");
+					break;
 			}
 		}
 
