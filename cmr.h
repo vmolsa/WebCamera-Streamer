@@ -1,7 +1,7 @@
 #ifndef _CMR_H
 #define _CMR_H
 
-typedef int (*on_frame)(void *arg, void *ptr, size_t size);
+typedef int (*on_frame_cb)(void *arg, void *ptr, size_t size);
 
 typedef struct _cmr_buffer_t {
 	void *ptr;
@@ -18,16 +18,16 @@ typedef struct _cmr_config_t {
 	float fps;
 	int buffer_count;
 	cmr_buffer_t *buffers;
-	on_frame cb;
+	on_frame_cb cb;
 	void *arg;
 } cmr_config_t;
 
-static void setCmrCb(cmr_config_t *cfg, on_frame cb, void *arg);
+void setCmrCb(cmr_config_t *cfg, on_frame_cb cb, void *arg);
 
-static void setCmrSettings(cmr_config_t *cfg, char *device, int width, int height, unsigned long fourcc, float fps);
+void setCmrSettings(cmr_config_t *cfg, char *device, int width, int height, unsigned long fourcc, float fps);
 
-static int openCmr(cmr_config_t *cfg);
+int openCmr(cmr_config_t *cfg);
 
-static void closeCmr(cmr_config_t *cfg);
+void closeCmr(cmr_config_t *cfg);
 
 #endif

@@ -1,6 +1,6 @@
 #include "config.h"
 
-static int xioctl(int fh, int request, void *arg) {
+int xioctl(int fh, int request, void *arg) {
 	int r;
 
 	do {
@@ -10,7 +10,7 @@ static int xioctl(int fh, int request, void *arg) {
 	return r;
 }
 
-static void v4l2_on_frame(uv_poll_t *handler, int status, int events) {
+void v4l2_on_frame(uv_poll_t *handler, int status, int events) {
 	cmr_config_t *cfg = (cmr_config_t *) handler->data;
 	static struct v4l2_buffer buf;
 
@@ -26,7 +26,7 @@ static void v4l2_on_frame(uv_poll_t *handler, int status, int events) {
 					break;
 				case EIO:
 				default:
-					errno_exit("VIDIOC_DQBUF");
+					LOG("Unable to Query buffer!");
 			}
 		}
 
@@ -36,18 +36,18 @@ static void v4l2_on_frame(uv_poll_t *handler, int status, int events) {
 			uv_stop(uv_default_loop());
 		}
 
-                if (xioctl(data->fd, VIDIOC_QBUF, &buf) < 0) {
-                        errno_exit("VIDIOC_QBUF");
+                if (xioctl(cfg->fd, VIDIOC_QBUF, &buf) < 0) {
+                        LOG("Unable to Query buffer!");
 		}
 	}
 }
 
-static void setCmrCb(cmr_config_t *cfg, on_frame cb, void *arg) {
+void setCmrCb(cmr_config_t *cfg, on_frame_cb cb, void *arg) {
 	cfg->cb = cb;
 	cfg->arg = arg;
 }
 
-static void setCmrSettings(cmr_config_t *cfg, char *device, int width, int height, unsigned long fourcc, float fps) {
+void setCmrSettings(cmr_config_t *cfg, char *device, int width, int height, unsigned long fourcc, float fps) {
 	cfg->device = device;
 	cfg->width = width;
 	cfg->height = height;
@@ -55,7 +55,7 @@ static void setCmrSettings(cmr_config_t *cfg, char *device, int width, int heigh
 	cfg->fps = fps;
 }
 
-static int openCmr(cmr_config_t *cfg) {
+int openCmr(cmr_config_t *cfg) {
 	static struct v4l2_requestbuffers req;
 	static struct v4l2_capability cap;
 	static struct v4l2_cropcap cropcap;
@@ -74,13 +74,13 @@ static int openCmr(cmr_config_t *cfg) {
 	cfg->buffer_count = -1;
 
 	if ((cfg->fd = open(cfg->device, O_RDWR, 0)) < 0) {
-		LOG("Unable to open device(%s)\n", cfg->devname);
+		LOG("Unable to open device(%s)\n", cfg->device);
 		return -1; 
 	}
 
 	memset(&cap, 0, sizeof(struct v4l2_capability));
 
-	if (xioctl(fd, VIDIOC_QUERYCAP, &cap) < 0) {
+	if (xioctl(cfg->fd, VIDIOC_QUERYCAP, &cap) < 0) {
 		if (EINVAL == errno) {
 			return -1;
 		} else {
@@ -107,7 +107,7 @@ static int openCmr(cmr_config_t *cfg) {
 	fmt.fmt.pix.pixelformat = cfg->fourcc;
 	fmt.fmt.pix.field = V4L2_FIELD_ANY;
 
-	if (xioctl(fd, VIDIOC_S_FMT, &fmt) < 0) {
+	if (xioctl(cfg->fd, VIDIOC_S_FMT, &fmt) < 0) {
 		LOG("Unable to set video format!\n");
 		return -1;
 	}
@@ -118,17 +118,17 @@ static int openCmr(cmr_config_t *cfg) {
 	fps.parm.capture.timeperframe.numerator = 1;
 	fps.parm.capture.timeperframe.denominator = cfg->fps;
 
-	if (xioctl(fd, VIDIOC_S_PARM, &fps) < 0) {
+	if (xioctl(cfg->fd, VIDIOC_S_PARM, &fps) < 0) {
 		LOG("Unable tocmr_config_t set video FPS!\n");
 		return -1;
 	}
 
-	if (xioctl(fd, VIDIOC_G_PARM, &fps) < 0) {
+	if (xioctl(cfg->fd, VIDIOC_G_PARM, &fps) < 0) {
 		LOG("Unable to get video FPS settings!\n");
 		return -1;
 	}
 
-	if (xioctl(fd, VIDIOC_G_FMT, &fmt) < 0) {
+	if (xioctl(cfg->fd, VIDIOC_G_FMT, &fmt) < 0) {
 		LOG("Unable to get video format settings!\n");
 		return -1;
 	}
@@ -160,12 +160,12 @@ static int openCmr(cmr_config_t *cfg) {
 		}
 	}
 
-	if ((cfg->buffers = calloc(req.count, sizeof(v4l2_buffer_t))) == NULL) {
+	if ((cfg->buffers = calloc(req.count, sizeof(cmr_buffer_t))) == NULL) {
 		LOG("Unable to allocate buffers!\n");
 		return -1;
 	}
 
-	for (cfg->buffer_count = 0; cfg->buffer_coun < req.count; cfg->buffer_count++) {
+	for (cfg->buffer_count = 0; cfg->buffer_count < req.count; cfg->buffer_count++) {
 		memset(&buf, 0, sizeof(struct v4l2_buffer));
 
 		buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -214,7 +214,7 @@ static int openCmr(cmr_config_t *cfg) {
 	return 0;
 }
 
-static void closeCmr(cmr_config_t *cfg) {
+void closeCmr(cmr_config_t *cfg) {
 	int i;
 
 	enum v4l2_buf_type type;
@@ -222,7 +222,7 @@ static void closeCmr(cmr_config_t *cfg) {
 	if (cfg->fd != -1) {
 		type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 
-		if (xioctl(fd, VIDIOC_STREAMOFF, &type) < 0) {
+		if (xioctl(cfg->fd, VIDIOC_STREAMOFF, &type) < 0) {
 			LOG("Unable to stop stream!\n");
 		}
 
@@ -238,6 +238,6 @@ static void closeCmr(cmr_config_t *cfg) {
 			free(cfg->buffers);
 		}
 
-		close(fd);
+		close(cfg->fd);
 	}
 }
