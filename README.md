@@ -1,4 +1,4 @@
-v4l2-streamer
+WebCamera-Streamer
 =============
 
 Simple WebCamera streamer to network.
@@ -7,8 +7,8 @@ So all "hard" work is done by camera itself so this software just "copy-paste" d
 
 ### Build:
     
-    git clone https://github.com/vmolsa/v4l2-streamer.git
-    cd v4l2-streamer
+    git clone https://github.com/vmolsa/WebCamera-Streamer
+    cd WebCamera-Streamer
     git clone https://github.com/joyent/libuv.git
     make
 
