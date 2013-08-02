@@ -8,31 +8,19 @@ static cmr_config_t cfg;
 static struct sockaddr_in addr;
 
 static uv_buf_t buf;
-static uv_timer_t timer;
-static uv_write_t write_req;
 static uv_tcp_t tcp;
+static uv_write_t write_req;
 static uv_connect_t con_req;
-
-static void startTimer();
-
-static void tcp_close_cb(uv_handle_t* handle) {
-	LOG("Disconnected!\n");
-}
 
 static void con_close_cb(uv_handle_t* handle) {
 	closeCmr(&cfg);
 
-	uv_close((uv_handle_t*) &tcp, tcp_close_cb);
-
-	if (!_doexit) {
-		startTimer();
-	}
+	uv_close((uv_handle_t*) &tcp, NULL);
 }
 
 static void doexit(uv_signal_t* handler, int signum) {
 	if (signum == SIGINT) {
 		_doexit = 1;
-		LOG("\n\nGot Signal!\n\n");
 
 		uv_signal_stop(handler);
 		uv_stop(uv_default_loop());
@@ -56,41 +44,25 @@ static void on_connect(uv_connect_t* req, int status) {
 	if (status < 0) {
 		LOG("Unable to connect!\n");
 		uv_close((uv_handle_t*) req->handle, con_close_cb);
-
-		startTimer();
 	}
 
 	else {
-		LOG("Connected!\n");
 		if (openCmr(&cfg) < 0) {
 			uv_stop(uv_default_loop());
 		}
 	}
 }
 
-static void timer_close_cb(uv_handle_t* handle) {
-	LOG("Timer stopped!\n");
-}
-
-static void on_timer(uv_timer_t* handle, int status) {
-	LOG("Connecting...\n");
-	uv_tcp_init(uv_default_loop(), &tcp);
-	uv_tcp_connect(&con_req, &tcp, addr, on_connect);
-	uv_close((uv_handle_t*) &timer, timer_close_cb);
-}
-
-static void startTimer() {
-	LOG("Starting Timer\n");
-
-	uv_timer_init(uv_default_loop(), &timer);
-	uv_timer_start(&timer, on_timer, 1000, 0);
-}
-
 int main(int argc, char **argv) {
+	if (argc != 3) {
+		LOG("%s: <host> <port>\n", argv[0]);
+		return 1;
+	}
+
 	uv_signal_t sighandler;
 	uv_signal_init(uv_default_loop(), &sighandler);
 	uv_signal_start(&sighandler, doexit, SIGINT);
-	
+
 //	setCmrSettings(&cfg, DEV, 1920, 1080, FOURCC('Y', 'U', '1', '2'), 24);
 //	setCmrSettings(&cfg, DEV, 1920, 1080, FOURCC('Y', 'U', '1', '2'), 30);
 
@@ -108,9 +80,10 @@ int main(int argc, char **argv) {
 
 	setCmrCb(&cfg, on_frame, NULL);
 
-	addr = uv_ip4_addr("192.168.1.8", 8000);
+	addr = uv_ip4_addr(argv[1], atoi(argv[2]));
 
-	startTimer();
+	uv_tcp_init(uv_default_loop(), &tcp);
+	uv_tcp_connect(&con_req, &tcp, addr, on_connect);
 
 	uv_run(uv_default_loop(), UV_RUN_DEFAULT);
 
