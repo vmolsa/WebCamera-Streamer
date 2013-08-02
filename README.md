@@ -9,6 +9,5 @@ So all "hard" work is done by camera itself so this software just "copy-paste" d
     
     git clone https://github.com/vmolsa/WebCamera-Streamer
     cd WebCamera-Streamer
-    git clone https://github.com/joyent/libuv.git
     make
 
